@@ -2,12 +2,24 @@
 defined('MOODLE_INTERNAL') || die();
 
 $string['pluginname'] = 'EAD IESDE Integration';
-$string['setting_baseurl'] = 'Base URL';
-$string['setting_baseurl_desc'] = 'Base URL of the EAD Web Service';
-$string['setting_apikey'] = 'EAD API KEY';
-$string['setting_apikey_desc'] = 'API Key provided by IESDE';
-$string['setting_wsusername'] = 'Web Service Username';
-$string['setting_wsusername_desc'] = 'Username for Digest Authentication';
-$string['setting_wspassword'] = 'Web Service Password';
-$string['setting_wspassword_desc'] = 'Password for Digest Authentication';
-$string['sync_users_task'] = 'Sync EAD Users';
+
+// --- Títulos das Seções ---
+$string['api_settings'] = 'Configurações da API';
+$string['integration_tools'] = 'Ferramentas de Gerenciamento';
+
+// --- Strings de Configuração ---
+$string['setting_baseurl'] = 'URL Base do Web Service';
+$string['setting_baseurl_desc'] = 'URL principal do serviço da IESDE.';
+$string['setting_apikey'] = 'Chave da API (EAD-API-KEY)';
+$string['setting_apikey_desc'] = 'Chave de acesso fornecida pela IESDE.';
+$string['setting_wsusername'] = 'Usuário do Web Service';
+$string['setting_wsusername_desc'] = 'Usuário para autenticação Digest.';
+$string['setting_wspassword'] = 'Senha do Web Service';
+$string['setting_wspassword_desc'] = 'Senha para autenticação Digest.';
+
+// --- Strings das Ferramentas ---
+$string['enroll_page_title'] = 'Matricular Aluno no IESDE';
+$string['sync_courses_page_title'] = 'Sincronizar Cursos do IESDE';
+
+// --- String da Tarefa Agendada ---
+$string['sync_users_task'] = 'Sincronizar Usuários (Tarefa Automática)';

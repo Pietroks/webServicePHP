@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="local/ead_integration/db" VERSION="20250709" COMMENT="XMLDB file for Moodle - local_ead_integration"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="../../../../lib/xmldb/xmldb.xsd">
+
+  <TABLES>
+
+    <!-- Matrículas -->
+    <TABLE NAME="eadintegration_enrolls" COMMENT="Stores the mapping between Moodle users/courses and IESDE matricula ID">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="moodle_userid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="moodle_courseid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="iesde_matriculaid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="moodle_user_course" TYPE="unique" FIELDS="moodle_userid, moodle_courseid"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="iesde_matriculaid_idx" UNIQUE="false" FIELDS="iesde_matriculaid"/>
+      </INDEXES>
+    </TABLE>
+
+    <!-- Grades -->
+    <TABLE NAME="eadintegration_grades" COMMENT="Grades curriculares associadas a cursos IESDE">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="iesde_cursoid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="gradeid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="nome" TYPE="text" NOTNULL="false"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="unique_grade" TYPE="unique" FIELDS="iesde_cursoid, gradeid"/>
+      </KEYS>
+    </TABLE>
+
+    <!-- Disciplinas -->
+    <TABLE NAME="eadintegration_disciplinas" COMMENT="Disciplinas vinculadas a uma grade IESDE">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="gradeid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="disciplinaid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="nome" TYPE="text" NOTNULL="true"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="unique_disciplina" TYPE="unique" FIELDS="gradeid, disciplinaid"/>
+      </KEYS>
+    </TABLE>
+
+    <!-- Materiais -->
+    <TABLE NAME="eadintegration_materiais" COMMENT="Materiais associados a disciplinas IESDE">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="disciplinaid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="titulo" TYPE="text" NOTNULL="true"/>
+        <FIELD NAME="descricao" TYPE="text" NOTNULL="false"/>
+        <FIELD NAME="url" TYPE="text" NOTNULL="true"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+    </TABLE>
+
+  </TABLES>
+</XMLDB>
