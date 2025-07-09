@@ -1,51 +1,42 @@
 <?php
 defined('MOODLE_INTERNAL') || die();
 
-if ($hassiteconfig) { // Garante que apenas usuários com permissão vejam a página.
+if ($hassiteconfig) {
+    $settings = new admin_settingpage('local_ead_integration_settings', get_string('pluginname', 'local_ead_integration'));
 
-    // Cria a página de configurações do plugin
-    $settings = new admin_settingpage('local_integracao_ava', get_string('pluginname', 'local_integracao_ava'));
-
-    // Cabeçalho e descrição
-    $settings->add(new admin_setting_heading(
-        'local_integracao_ava_auth_header',
-        get_string('auth_header', 'local_integracao_ava'),
-        get_string('auth_description', 'local_integracao_ava')
+    // Adiciona o campo para a URL Base
+    $settings->add(new admin_setting_configtext(
+        'local_ead_integration/baseurl',
+        get_string('setting_baseurl', 'local_ead_integration'),
+        get_string('setting_baseurl_desc', 'local_ead_integration'),
+        'https://ead.portalava.com.br.homologacao.iesde.com.br', // Valor padrão do ambiente
+        PARAM_URL
     ));
 
-    // Campo para 'api_http_user'
+    // Adiciona o campo para a API Key
     $settings->add(new admin_setting_configtext(
-        'local_integracao_ava/api_http_user',
-        get_string('api_http_user', 'local_integracao_ava'),
-        get_string('api_http_user_desc', 'local_integracao_ava'),
-        '',
+        'local_ead_integration/apikey',
+        get_string('setting_apikey', 'local_ead_integration'),
+        get_string('setting_apikey_desc', 'local_ead_integration'),
+        'd2ca33145b4628c5d4d21a6e3c05aa75', // Valor padrão do ambiente
         PARAM_TEXT
     ));
 
-    // Campo para 'api_http_pass'
-    $settings->add(new admin_setting_configpasswordunmask(
-        'local_integracao_ava/api_http_pass',
-        get_string('api_http_pass', 'local_integracao_ava'),
-        get_string('api_http_pass_desc', 'local_integracao_ava'),
-        '',
+    // Adiciona o campo para o Username
+    $settings->add(new admin_setting_configtext(
+        'local_ead_integration/wsusername',
+        get_string('setting_wsusername', 'local_ead_integration'),
+        get_string('setting_wsusername_desc', 'local_ead_integration'),
+        '1590e99c63d124e374345de71205ddb7c63a0b8d', // Valor padrão do ambiente
         PARAM_TEXT
     ));
 
-    // Campo para 'chave_acesso'
+    // Adiciona o campo para a Senha
     $settings->add(new admin_setting_configtext(
-        'local_integracao_ava/chave_acesso',
-        get_string('chave_acesso', 'local_integracao_ava'),
-        get_string('chave_acesso_desc', 'local_integracao_ava'),
-        '',
-        PARAM_TEXT
-    ));
-
-    // Campo para 'chave_name'
-    $settings->add(new admin_setting_configtext(
-        'local_integracao_ava/chave_name',
-        get_string('chave_name', 'local_integracao_ava'),
-        get_string('chave_name_desc', 'local_integracao_ava'),
-        'EAD-API-KEY', // Valor padrão, conforme o manual
+        'local_ead_integration/wspassword',
+        get_string('setting_wspassword', 'local_ead_integration'),
+        get_string('setting_wspassword_desc', 'local_ead_integration'),
+        'afb94979f63f3038b84344d7ac37febe39748167', // Valor padrão do ambiente
         PARAM_TEXT
     ));
 

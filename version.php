@@ -1,8 +1,8 @@
 <?php
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->component = 'local_integracao_ava'; // Nome completo do plugin.
-$plugin->version   = 2024061804; // Versão do plugin (Ano-Mês-Dia-Contador).
-$plugin->requires  = 2020061500; // Versão mínima do Moodle (corresponde ao Moodle 3.9).
-$plugin->maturity  = MATURITY_ALPHA; // Estágio de desenvolvimento.
-$plugin->release   = '1.0 (Alpha)'; // Nome da versão.
+$plugin->component = 'local_ead_integration';
+$plugin->version = 20240708077; // AAAAMMDDXX (Ano, Mês, Dia, Versão)
+$plugin->requires = 2022112800; // Versão do Moodle 4.1
+$plugin->maturity = MATURITY_ALPHA;
+$plugin->release = '0.1';
