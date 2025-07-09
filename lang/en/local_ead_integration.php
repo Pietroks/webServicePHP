@@ -22,4 +22,4 @@ $string['enroll_page_title'] = 'Matricular Aluno no IESDE';
 $string['sync_courses_page_title'] = 'Sincronizar Cursos do IESDE';
 
 // --- String da Tarefa Agendada ---
-$string['sync_users_task'] = 'Sincronizar Usuários (Tarefa Automática)';
+$string['sync_users_task'] = 'Sincronizar alunos alterados no IESDE';

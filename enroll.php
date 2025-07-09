@@ -265,5 +265,6 @@ if ($existing_enrollments) {
 }
 
 echo '<hr><p><a href="' . new moodle_url('/local/ead_integration/logs.php') . '">📄 Ver logs de integração</a></p>';
+echo '<hr><p><a href="' . new moodle_url('/local/ead_integration/sync_logs.php') . '">📋 Ver logs de sincronização de usuários</a></p>';
 
 echo $OUTPUT->footer();
