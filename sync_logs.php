@@ -35,5 +35,6 @@ if ($logs) {
 } else {
     echo '<p>Nenhum log encontrado.</p>';
 }
+echo '<p><a href="' . new moodle_url('/local/ead_integration/enroll.php') . '" style="text-decoration:none; font-weight:bold; margin-top: 2rem;">← Voltar para gestão de matrículas</a></p>';
 
 echo $OUTPUT->footer();

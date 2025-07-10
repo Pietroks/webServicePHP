@@ -20,6 +20,7 @@ $string['setting_wspassword_desc'] = 'Senha para autenticação Digest.';
 // --- Strings das Ferramentas ---
 $string['enroll_page_title'] = 'Matricular Aluno no IESDE';
 $string['sync_courses_page_title'] = 'Sincronizar Cursos do IESDE';
+$string['index_page_title'] = 'Painel da Integração EAD';
 
 // --- String da Tarefa Agendada ---
 $string['sync_users_task'] = 'Sincronizar alunos alterados no IESDE';

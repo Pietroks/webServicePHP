@@ -55,5 +55,12 @@ if ($hassiteconfig) {
         get_string('sync_courses_page_title', 'local_ead_integration'),
         new moodle_url('/local/ead_integration/sincronizar_cursos.php')
     ));
+
+    $ADMIN->add('localplugins', new admin_externalpage(
+        'local_ead_integration_index',
+        get_string('index_page_title', 'local_ead_integration'),
+        new moodle_url('/local/ead_integration/index.php')
+    ));
+
 }
 

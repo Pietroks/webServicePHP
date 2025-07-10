@@ -18,6 +18,7 @@ class sync_users extends \core\task\scheduled_task {
 
         $api_client = new \local_ead_integration\webservice_client();
 
+        // Datas de busca (últimas 24h)
         $params = [
             'dataDe' => date('Y-m-d', strtotime('-1 day')),
             'dataAte' => date('Y-m-d'),
@@ -30,25 +31,30 @@ class sync_users extends \core\task\scheduled_task {
             return;
         }
 
+        // Verifica se existe o campo personalizado 'cpf'
+        $cpffield = $DB->get_record('user_info_field', ['shortname' => 'cpf']);
+
         foreach ($alunos as $aluno_data) {
             $cpf = $aluno_data['CPF'];
             $email = $aluno_data['Email'];
             $nome = $aluno_data['Nome'];
             $cidade = $aluno_data['cidade'] ?? '';
-            
+
             $log = new \stdClass();
             $log->cpf = $cpf;
             $log->email = $email;
             $log->nome = $nome;
             $log->timecreated = time();
 
-            // Verifica se já existe um usuário com esse CPF ou email
-            $user = $DB->get_record_select('user', "username = :cpf OR email = :email", ['cpf' => $cpf, 'email' => $email]);
+            // Busca usuário por CPF OU e-mail
+            $user = $DB->get_record_select('user', "username = :cpf OR email = :email", [
+                'cpf' => $cpf,
+                'email' => $email
+            ]);
 
             if ($user) {
                 $updated = false;
 
-                // Verifica se algum campo mudou
                 if ($user->firstname !== $nome) {
                     $user->firstname = $nome;
                     $updated = true;
@@ -67,17 +73,27 @@ class sync_users extends \core\task\scheduled_task {
                 if ($updated) {
                     try {
                         \core_user::update_user($user);
+                        $log->userid = $user->id;
                         $log->sucesso = 1;
-                        $log->mensagem = "Usuário atualizado com sucesso. ID: {$user->id}";
+                        $log->mensagem = "Usuário atualizado com sucesso.";
+                        $log->status = 'updated';
                         mtrace("🔄 Usuário atualizado: {$user->username} (ID: {$user->id})");
+
+                        // Atualiza campo CPF personalizado
+                        if ($cpffield) {
+                            self::update_profile_field($user->id, $cpffield->id, $cpf);
+                        }
                     } catch (\Exception $e) {
                         $log->sucesso = 0;
+                        $log->status = 'error';
                         $log->mensagem = "Erro ao atualizar usuário: " . $e->getMessage();
                         mtrace("❌ " . $log->mensagem);
                     }
                 } else {
+                    $log->userid = $user->id;
                     $log->sucesso = 1;
-                    $log->mensagem = "Usuário já existe e está atualizado. ID: {$user->id}";
+                    $log->mensagem = "Usuário já está atualizado.";
+                    $log->status = 'skipped';
                     mtrace("⏩ Nenhuma alteração necessária para {$user->username}");
                 }
 
@@ -85,7 +101,7 @@ class sync_users extends \core\task\scheduled_task {
                 // Criação de novo usuário
                 $newuser = new \stdClass();
                 $newuser->username = $cpf;
-                $newuser->password = \core_user::hash_password($cpf);
+                $newuser->password = password_hash($cpf, PASSWORD_DEFAULT);
                 $newuser->firstname = $nome;
                 $newuser->lastname = '.';
                 $newuser->email = $email;
@@ -97,19 +113,51 @@ class sync_users extends \core\task\scheduled_task {
 
                 try {
                     $userid = \core_user::create_user($newuser);
+                    $log->userid = $userid;
                     $log->sucesso = 1;
-                    $log->mensagem = "Usuário criado com sucesso. ID: $userid";
+                    $log->mensagem = "Usuário criado com sucesso.";
+                    $log->status = 'created';
                     mtrace("✅ Usuário criado: {$newuser->username} (ID: $userid)");
+
+                    // Salva CPF no campo personalizado
+                    if ($cpffield) {
+                        self::update_profile_field($userid, $cpffield->id, $cpf);
+                    }
                 } catch (\Exception $e) {
                     $log->sucesso = 0;
+                    $log->status = 'error';
                     $log->mensagem = "Erro ao criar usuário: " . $e->getMessage();
                     mtrace("❌ " . $log->mensagem);
                 }
             }
 
+            // Salva o log da operação
             $DB->insert_record('eadintegration_sync_logs', $log);
         }
 
         mtrace("✅ Tarefa de sincronização de usuários concluída.");
+    }
+
+    /**
+     * Atualiza ou insere valor no campo personalizado do usuário
+     */
+    private static function update_profile_field($userid, $fieldid, $value) {
+        global $DB;
+
+        $data = $DB->get_record('user_info_data', [
+            'userid' => $userid,
+            'fieldid' => $fieldid
+        ]);
+
+        if ($data) {
+            $data->data = $value;
+            $DB->update_record('user_info_data', $data);
+        } else {
+            $DB->insert_record('user_info_data', [
+                'userid' => $userid,
+                'fieldid' => $fieldid,
+                'data' => $value
+            ]);
+        }
     }
 }
