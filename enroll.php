@@ -3,7 +3,7 @@ require_once('../../config.php');
 require_login();
 require_admin();
 
-global $DB, $PAGE, $OUTPUT;
+global $DB, $PAGE, $OUTPUT, $CFG;
 
 $PAGE->set_context(context_system::instance());
 $PAGE->set_url(new moodle_url('/local/ead_integration/enroll.php'));
@@ -12,9 +12,13 @@ $PAGE->set_heading('Gestão de Matrículas IESDE');
 
 echo $OUTPUT->header();
 
+// Parâmetros do formulário
 $action = optional_param('action', '', PARAM_ALPHA);
-$moodle_userid = optional_param('moodle_userid', 0, PARAM_INT);
-$moodle_courseid = optional_param('moodle_courseid', 0, PARAM_INT);
+$moodle_userids = optional_param_array('moodle_userids', [], PARAM_INT);
+$moodle_courseid = optional_param('moodle_courseid_hidden', 0, PARAM_INT); // Campo oculto para o curso
+$moodle_courseid_revert = optional_param('moodle_courseid_revert', 0, PARAM_INT); // Para reversão
+$moodle_userid_revert = optional_param('moodle_userid_revert', 0, PARAM_INT); // Para reversão
+
 
 function print_message_box($message, $type = 'info') {
     $colors = [
@@ -29,12 +33,11 @@ function print_message_box($message, $type = 'info') {
     echo '</div>';
 }
 
-// Função para registrar logs na tabela eadintegration_logs
-function register_log($user, $course, $action, $status, $message, $response) {
+function register_log($user_id, $course_id, $action, $status, $message, $response) {
     global $DB;
     $log = new stdClass();
-    $log->moodle_userid = $user->id;
-    $log->moodle_courseid = $course->id;
+    $log->moodle_userid = $user_id;
+    $log->moodle_courseid = $course_id;
     $log->action = $action;
     $log->status = $status;
     $log->message = $message;
@@ -45,226 +48,263 @@ function register_log($user, $course, $action, $status, $message, $response) {
 
 // PROCESSAMENTO
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
-
     if ($action === 'revert') {
-        // Reversão
-        $user = $DB->get_record('user', ['id' => $moodle_userid], '*', MUST_EXIST);
-        $course = $DB->get_record('course', ['id' => $moodle_courseid], '*', MUST_EXIST);
+        $user = $DB->get_record('user', ['id' => $moodle_userid_revert], '*', MUST_EXIST);
+        $course = $DB->get_record('course', ['id' => $moodle_courseid_revert], '*', MUST_EXIST);
+        $enroll = $DB->get_record('eadintegration_enrolls', ['moodle_userid' => $user->id, 'moodle_courseid' => $course->id], '*', IGNORE_MISSING);
 
-        $enroll = $DB->get_record('eadintegration_enrolls', [
-            'moodle_userid' => $user->id,
-            'moodle_courseid' => $course->id
-        ], '*', IGNORE_MISSING);
-
-        echo '<h2>Revertendo Matrícula</h2>';
-        echo '<pre>';
-
+        echo '<h2>Revertendo Matrícula</h2><pre>';
         if (!$enroll) {
-            print_message_box('⚠️ Matrícula local não encontrada para esse usuário e curso.', 'warning');
+            print_message_box('⚠️ Matrícula local não encontrada.', 'warning');
         } else {
             $api_client = new \local_ead_integration\webservice_client();
-
-            $params_cancel = [
-                'MatriculaID' => $enroll->iesde_matriculaid,
-                'Situacao' => 'I'
-            ];
+            $params_cancel = ['MatriculaID' => $enroll->iesde_matriculaid, 'Situacao' => 'I'];
             $cancel_result = $api_client->call('situacao', $params_cancel, false);
+            
+            $is_success = is_array($cancel_result) && isset($cancel_result['status']) && $cancel_result['status'] == 1;
+            register_log($user->id, $course->id, 'revert', $is_success ? 'success' : 'error', json_encode($cancel_result), json_encode($cancel_result));
 
-            // Registra log da reversão
-            register_log(
-                $user,
-                $course,
-                'revert',
-                (isset($cancel_result['status']) && $cancel_result['status'] == 1) ? 'success' : 'error',
-                json_encode($cancel_result),
-                json_encode($cancel_result)
-            );
+            if ($is_success) {
+                print_message_box("✅ Matrícula inativada no IESDE.", 'success');
+                $DB->delete_records('eadintegration_enrolls', ['id' => $enroll->id]);
+                print_message_box("✅ Registro local removido.", 'success');
+                
+                require_once($CFG->dirroot . '/enrol/manual/locallib.php');
+                $enrol_plugin = enrol_get_plugin('manual');
+                if ($instances = enrol_get_instances($course->id, true)) {
+                    foreach ($instances as $instance) {
+                        if ($instance->enrol === 'manual') {
+                            $enrol_plugin->unenrol_user($instance, $user->id);
+                            print_message_box("✅ Usuário desmatriculado no Moodle.", 'success');
+                            break;
+                        }
+                    }
+                }
+            } else {
+                print_message_box('❌ Erro na API do IESDE:<br><pre>' . print_r($cancel_result, true) . '</pre>', 'error');
+            }
+        }
+        echo '</pre><a href="' . new moodle_url('/local/ead_integration/enroll.php') . '">← Voltar</a>';
+        echo $OUTPUT->footer();
+        exit;
+    }
 
-            if (is_array($cancel_result) && isset($cancel_result['status'])) {
-                if ($cancel_result['status'] === 1) {
-                    print_message_box("✅ Matrícula inativada com sucesso na API IESDE.", 'success');
+    if ($action === 'enroll') {
+        $course = $DB->get_record('course', ['id' => $moodle_courseid], '*', MUST_EXIST);
+        echo '<h2>Processando Matrículas...</h2>';
 
-                    // Remove da tabela local
-                    $DB->delete_records('eadintegration_enrolls', ['id' => $enroll->id]);
-                    print_message_box("✅ Registro local removido.", 'success');
+        if (empty($moodle_userids)) {
+            print_message_box('❌ Nenhum aluno foi selecionado.', 'error');
+        } else {
+            foreach ($moodle_userids as $moodle_userid) {
+                $user = $DB->get_record('user', ['id' => $moodle_userid]);
+                echo '<hr><h4>Processando: ' . fullname($user) . '</h4>';
 
-                    // Desmatricula no Moodle
+                $cpf = $DB->get_field_sql("SELECT data FROM {user_info_data} uid JOIN {user_info_field} uif ON uid.fieldid = uif.id WHERE uid.userid = :userid AND uif.shortname = 'cpf'", ['userid' => $user->id]);
+
+                if (empty($cpf)) {
+                    print_message_box('❌ Usuário sem CPF cadastrado. Matrícula ignorada.', 'error');
+                    register_log($user->id, $course->id, 'enroll_skipped', 'error', 'CPF não encontrado', '');
+                    continue;
+                }
+
+                if ($DB->record_exists('eadintegration_enrolls', ['moodle_userid' => $user->id, 'moodle_courseid' => $course->id])) {
+                    print_message_box('❌ Usuário já possui matrícula IESDE neste curso. Matrícula ignorada.', 'warning');
+                    continue;
+                }
+
+                $api_client = new \local_ead_integration\webservice_client();
+                $params = [
+                    'CursoID' => $course->idnumber,
+                    'PoloID'  => '0',
+                    'Nome'    => fullname($user),
+                    'CPF'     => preg_replace('/[^0-9]/', '', $cpf),
+                    'Email'   => $user->email,
+                    'CEP'     => '00000000',
+                    'Numero'  => '0',
+                ];
+
+                $resultado = $api_client->call('cadastro', $params, false);
+                $is_success = is_array($resultado) && isset($resultado['status']) && $resultado['status'] == 1;
+                register_log($user->id, $course->id, 'enroll', $is_success ? 'success' : 'error', json_encode($resultado), json_encode($resultado));
+
+                if ($is_success) {
+                    $new_enrollment = new stdClass();
+                    $new_enrollment->moodle_userid = $user->id;
+                    $new_enrollment->moodle_courseid = $course->id;
+                    $new_enrollment->iesde_matriculaid = $resultado['MatriculaID'];
+                    $new_enrollment->timecreated = time();
+                    $new_enrollment->timemodified = time();
+                    $DB->insert_record('eadintegration_enrolls', $new_enrollment);
+                    print_message_box("✅ Aluno matriculado no IESDE com ID: " . $resultado['MatriculaID'], 'success');
+                    
                     require_once($CFG->dirroot . '/enrol/manual/locallib.php');
                     $enrol_plugin = enrol_get_plugin('manual');
                     if ($instances = enrol_get_instances($course->id, true)) {
                         foreach ($instances as $instance) {
                             if ($instance->enrol === 'manual') {
-                                $enrol_plugin->unenrol_user($instance, $user->id);
-                                print_message_box("✅ Usuário desmatriculado no Moodle.", 'success');
+                                $enrol_plugin->enrol_user($instance, $user->id, 5); // 5 = role student
+                                print_message_box("✅ Usuário matriculado também no Moodle.", 'success');
                                 break;
                             }
                         }
                     }
                 } else {
-                    print_message_box('❌ Erro ao inativar matrícula na API:<br><pre>' . print_r($cancel_result, true) . '</pre>', 'error');
+                    print_message_box('❌ Falha ao matricular no IESDE: <pre>' . print_r($resultado, true) . '</pre>', 'error');
                 }
-            } else {
-                print_message_box('❌ Resposta inesperada da API:<br><pre>' . print_r($cancel_result, true) . '</pre>', 'error');
             }
         }
-        echo '</pre>';
-        echo '<a href="' . new moodle_url('/local/ead_integration/enroll.php') . '">← Voltar para gestão de matrículas</a>';
-        echo $OUTPUT->footer();
-        exit;
-    }
-
-    if ($action === 'enroll' || $action === '') {
-        // Matrícula
-        $user = $DB->get_record('user', ['id' => $moodle_userid], '*', MUST_EXIST);
-        $course = $DB->get_record('course', ['id' => $moodle_courseid], '*', MUST_EXIST);
-
-        $cpf = $DB->get_field_sql("
-            SELECT uid.data
-            FROM {user_info_data} uid
-            JOIN {user_info_field} uif ON uid.fieldid = uif.id
-            WHERE uid.userid = :userid AND uif.shortname = 'cpf'
-        ", ['userid' => $user->id]);
-
-        if (empty($cpf)) {
-            print_message_box('❌ Este usuário não possui CPF cadastrado no perfil personalizado "cpf".', 'error');
-            echo '<a href="' . new moodle_url('/local/ead_integration/enroll.php') . '">← Voltar</a>';
-            echo $OUTPUT->footer();
-            exit;
-        }
-
-        if ($DB->record_exists('eadintegration_enrolls', ['moodle_userid' => $user->id, 'moodle_courseid' => $course->id])) {
-            print_message_box('❌ Este usuário já possui uma matrícula IESDE para este curso.', 'error');
-            echo '<a href="' . new moodle_url('/local/ead_integration/enroll.php') . '">← Voltar</a>';
-            echo $OUTPUT->footer();
-            exit;
-        }
-
-        $api_client = new \local_ead_integration\webservice_client();
-        $params = [
-            'CursoID' => $course->idnumber,
-            'PoloID' => '0',
-            'Nome' => fullname($user),
-            'CPF' => preg_replace('/[^0-9]/', '', $cpf),
-            'Email' => $user->email,
-            'CEP' => '00000000',
-            'Numero' => '0',
-        ];
-
-        echo '<h2>Processando Matrícula...</h2><pre>';
-
-        $resultado = $api_client->call('cadastro', $params, false);
-
-        // Registra log da matrícula
-        register_log(
-            $user,
-            $course,
-            'enroll',
-            (isset($resultado['status']) && $resultado['status'] == 1) ? 'success' : 'error',
-            json_encode($resultado),
-            json_encode($resultado)
-        );
-
-        if (is_array($resultado) && isset($resultado['status'])) {
-            if ($resultado['status'] == 1) {
-                $new_enrollment = new stdClass();
-                $new_enrollment->moodle_userid = $user->id;
-                $new_enrollment->moodle_courseid = $course->id;
-                $new_enrollment->iesde_matriculaid = $resultado['MatriculaID'];
-                $new_enrollment->timecreated = time();
-                $new_enrollment->timemodified = time();
-
-                $DB->insert_record('eadintegration_enrolls', $new_enrollment);
-
-                print_message_box("✅ Aluno '" . fullname($user) . "' matriculado no curso '{$course->fullname}' com Matrícula IESDE ID: " . $resultado['MatriculaID'], 'success');
-
-                require_once($CFG->dirroot . '/enrol/manual/locallib.php');
-                $enrol = enrol_get_plugin('manual');
-                $instances = enrol_get_instances($course->id, true);
-
-                foreach ($instances as $instance) {
-                    if ($instance->enrol === 'manual') {
-                        $enrol->enrol_user($instance, $user->id, 5);
-                        print_message_box("✅ Usuário matriculado também no Moodle.", 'success');
-                        break;
-                    }
-                }
-            } else {
-                print_message_box('❌ Falha ao matricular: <pre>' . print_r($resultado, true) . '</pre>', 'error');
-            }
-        } else {
-            print_message_box('❌ Resposta inesperada da API:<br><pre>' . print_r($resultado, true) . '</pre>', 'error');
-        }
-
-        echo '</pre>';
-        echo '<a href="' . new moodle_url('/local/ead_integration/enroll.php') . '">← Voltar para gestão de matrículas</a>';
+        echo '<a href="' . new moodle_url('/local/ead_integration/enroll.php') . '">← Voltar</a>';
         echo $OUTPUT->footer();
         exit;
     }
 }
 
-// Formulário e lista
-
-$users = $DB->get_records('user', ['deleted' => 0], 'lastname ASC', 'id, firstname, lastname, email');
+// Formulário
+$users = $DB->get_records('user', ['deleted' => 0], 'lastname ASC, firstname ASC', 'id, firstname, lastname, email');
 $courses = $DB->get_records('course', [], 'fullname ASC', 'id, fullname, idnumber');
 $iesde_courses = array_filter($courses, function($course) {
     return !empty($course->idnumber) && is_numeric($course->idnumber);
 });
 
-echo '<h2>Nova Matrícula</h2>';
-echo '<form method="post">';
+echo '<div class="container" style="max-width: 800px; margin: auto;">';
+echo '<h2 style="margin-bottom: 20px;">📘 Nova Matrícula</h2>';
+echo '<form method="post" style="background: #f9f9f9; padding: 20px; border-radius: 10px; box-shadow: 0 0 8px rgba(0,0,0,0.05);">';
 echo '<input type="hidden" name="sesskey" value="' . sesskey() . '">';
 echo '<input type="hidden" name="action" value="enroll">';
 
-echo '<label for="moodle_userid">Selecione o Usuário:</label><br>';
-echo '<select name="moodle_userid" id="moodle_userid" required>';
-echo '<option value="">-- Selecione --</option>';
-foreach ($users as $user) {
-    echo '<option value="' . $user->id . '">' . fullname($user) . ' (' . $user->email . ')</option>';
-}
-echo '</select><br><br>';
-
-echo '<label for="moodle_courseid">Selecione o Curso IESDE:</label><br>';
-echo '<select name="moodle_courseid" id="moodle_courseid" required>';
-echo '<option value="">-- Selecione --</option>';
+// BUSCA DE CURSO (RESTAURADA)
+echo '<div style="margin-bottom: 20px;">';
+echo '<label for="moodle_courseid_display" style="font-weight: bold; display:block; margin-bottom:5px;">🎓 Selecionar Curso IESDE</label>';
+echo '<input type="hidden" name="moodle_courseid_hidden" id="moodle_courseid_hidden">';
+echo '<input list="lista-cursos" id="moodle_courseid_display" placeholder="Digite o nome do Curso para buscar" required style="width:100%; padding:8px; border-radius:5px; border:1px solid #ccc;">';
+echo '<datalist id="lista-cursos">';
 foreach ($iesde_courses as $course) {
-    echo '<option value="' . $course->id . '">' . $course->fullname . '</option>';
+    echo '<option data-id="' . $course->id . '" value="' . $course->fullname . '">';
 }
-echo '</select><br><br>';
+echo '</datalist>';
+echo '</div>';
 
-echo '<button type="submit" style="padding:10px 20px; font-weight:bold;">✅ Matricular Aluno</button>';
+
+// SELEÇÃO DE MÚLTIPLOS ALUNOS (MANTIDA)
+echo '<div style="margin-bottom: 20px;">';
+echo '<label for="user-search-input" style="font-weight: bold; display:block; margin-bottom:5px;">👤 Selecionar Alunos</label>';
+echo '<input type="text" id="user-search-input" placeholder="Digite para buscar alunos..." style="width:100%; padding:8px; margin-bottom:10px; border-radius:5px; border:1px solid #ccc;">';
+echo '<div id="user-checkbox-list" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background:white; border-radius:5px;">';
+foreach ($users as $user) {
+    echo '<div class="user-item" data-fullname="' . strtolower(fullname($user)) . '">';
+    echo '<label><input type="checkbox" name="moodle_userids[]" value="' . $user->id . '"> ' . fullname($user) . ' (' . $user->email . ')</label>';
+    echo '</div>';
+}
+echo '</div>';
+echo '</div>';
+
+echo '<button type="submit" style="width:100%; padding:12px; font-weight:bold; background-color:#007bff; color:white; border:none; border-radius:6px; font-size:16px;">✅ Matricular Alunos Selecionados</button>';
 echo '</form>';
+echo '</div>';
 
-// Lista matrículas existentes
 
-$existing_enrollments = $DB->get_records('eadintegration_enrolls');
+// LISTA DE MATRÍCULAS EXISTENTES
+$existing_enrollments = $DB->get_records('eadintegration_enrolls', [], 'id DESC');
 if ($existing_enrollments) {
-    echo '<hr><h2>Matrículas Existentes</h2><ul style="list-style:none; padding-left:0;">';
+    echo '<hr style="margin-top: 40px;">';
+    
+    // Gaveta (Accordion)
+    echo '<details class="enrollment-accordion" style="margin-top: 20px;">';
+    echo '<summary style="font-size: 1.5em; font-weight: bold; cursor: pointer; padding: 10px; background: #e9ecef; border-radius: 8px;">📄 Matrículas Existentes (Clique para expandir)</summary>';
+    
+    // Container com a busca e a lista
+    echo '<div style="padding-top: 20px;">';
+
+    // Campo de busca
+    echo '<input type="text" id="enrollment-search-input" placeholder="Buscar por nome, CPF ou ID da matrícula..." style="width: 100%; padding: 10px; margin-bottom: 20px; border-radius: 5px; border: 1px solid #ccc;">';
+
+    echo '<ul id="enrollment-list" style="list-style:none; padding:0;">';
+
     foreach ($existing_enrollments as $enroll) {
         $u = $DB->get_record('user', ['id' => $enroll->moodle_userid]);
         $c = $DB->get_record('course', ['id' => $enroll->moodle_courseid]);
-        if (!$u || !$c) {
-            continue;
-        }
+        if (!$u || !$c) continue;
 
-        echo '<li style="margin-bottom:10px; padding:10px; border:1px solid #ddd; border-radius:5px;">';
-        echo '<strong>' . fullname($u) . '</strong> — Curso: <em>' . $c->fullname . '</em><br>';
-        echo 'Matrícula IESDE ID: ' . $enroll->iesde_matriculaid . '<br>';
+        // Pega o CPF do usuário para a busca
+        $cpf = $DB->get_field('user_info_data', 'data', ['userid' => $u->id, 'fieldid' => $DB->get_field('user_info_field', 'id', ['shortname' => 'cpf'])]);
+        
+        // Constrói o texto de busca (nome + cpf + id)
+        $search_data = strtolower(fullname($u) . ' ' . $cpf . ' ' . $enroll->iesde_matriculaid);
 
-        // Botão de reverter matrícula
-        echo '<form method="post" style="display:inline-block; margin-top:5px;" onsubmit="return confirm(\'Deseja realmente reverter esta matrícula? Isso irá inativar o aluno no sistema da IESDE e desmatriculá-lo no Moodle.\');">';
+        echo '<li class="enrollment-item" data-search="' . htmlspecialchars($search_data) . '" style="margin-bottom:15px; padding:15px; background:#f1f1f1; border-radius:8px;">';
+        echo '<div><strong>' . fullname($u) . '</strong></div>';
+        echo '<div>CPF: <code>' . ($cpf ?: 'Não informado') . '</code></div>';
+        echo '<div>Curso: <em>' . $c->fullname . '</em></div>';
+        echo '<div>ID Matrícula IESDE: <code>' . $enroll->iesde_matriculaid . '</code></div>';
+        echo '<form method="post" style="margin-top:10px;" onsubmit="return confirm(\'Deseja realmente reverter esta matrícula?\');">';
         echo '<input type="hidden" name="sesskey" value="' . sesskey() . '">';
         echo '<input type="hidden" name="action" value="revert">';
-        echo '<input type="hidden" name="moodle_userid" value="' . $u->id . '">';
-        echo '<input type="hidden" name="moodle_courseid" value="' . $c->id . '">';
-        echo '<button type="submit" style="padding:6px 12px; background:#dc3545; color:#fff; border:none; border-radius:3px; cursor:pointer;">❌ Reverter Matrícula</button>';
+        echo '<input type="hidden" name="moodle_userid_revert" value="' . $u->id . '">';
+        echo '<input type="hidden" name="moodle_courseid_revert" value="' . $c->id . '">';
+        echo '<button type="submit" style="padding:8px 16px; background:#dc3545; color:white; border:none; border-radius:5px; cursor:pointer;">❌ Reverter Matrícula</button>';
         echo '</form>';
-
         echo '</li>';
     }
+
     echo '</ul>';
+    echo '</div>'; // Fim do container
+    echo '</details>'; // Fim da gaveta
 }
 
-echo '<hr><p><a href="' . new moodle_url('/local/ead_integration/logs.php') . '">📄 Ver logs de integração</a></p>';
-echo '<hr><p><a href="' . new moodle_url('/local/ead_integration/sync_logs.php') . '">📋 Ver logs de sincronização de usuários</a></p>';
+// JAVASCRIPT
+echo <<<JS
+<script>
+// Script para popular o campo oculto do curso
+document.getElementById('moodle_courseid_display').addEventListener('input', function() {
+    const input = this.value;
+    const options = document.querySelectorAll('#lista-cursos option');
+    let found = false;
+    options.forEach(opt => {
+        if (opt.value === input) {
+            document.getElementById('moodle_courseid_hidden').value = opt.dataset.id;
+            found = true;
+        }
+    });
+    if (!found) {
+        document.getElementById('moodle_courseid_hidden').value = '';
+    }
+});
+
+// Script para filtrar a lista de alunos
+document.getElementById('user-search-input').addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    const userItems = document.querySelectorAll('#user-checkbox-list .user-item');
+    
+    userItems.forEach(item => {
+        const fullname = item.dataset.fullname;
+        if (fullname.includes(filter)) {
+            item.style.display = '';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+});
+
+document.getElementById('enrollment-search-input').addEventListener('input', function() {
+    const filter = this.value.toLowerCase();
+    const listItems = document.querySelectorAll('#enrollment-list .enrollment-item');
+    
+    listItems.forEach(item => {
+        const searchData = item.dataset.search;
+        if (searchData.includes(filter)) {
+            item.style.display = '';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+});
+</script>
+JS;
+
+echo '<hr>';
+echo '<p><a href="' . new moodle_url('/local/ead_integration/logs.php') . '" style="color:#007bff; font-weight:bold;">📄 Ver logs de integração</a></p>';
+echo '<p><a href="' . new moodle_url('/local/ead_integration/sync_logs.php') . '" style="color:#007bff; font-weight:bold;">📋 Ver logs de sincronização de usuários</a></p>';
+echo '<p><a href="' . new moodle_url('/local/ead_integration/index.php') . '" style="color:#007bff; font-weight:bold;">📋 Acessar o dashboard</a></p>';
 
 echo $OUTPUT->footer();
