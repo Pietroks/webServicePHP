@@ -73,7 +73,6 @@ echo <<<HTML
 </style>
 HTML;
 
-echo '<h3>📊 Painel de Controle da Integração</h3>';
 echo '<p>Visão geral e logs das matrículas realizadas através da integração com o IESDE.</p>';
 
 // --- Cards de Estatísticas ---
@@ -106,6 +105,7 @@ echo '<a href="' . new moodle_url('/admin/settings.php?section=local_ead_integra
 // BOTÕES PARA OS LOGS
 echo '<a href="' . new moodle_url('/local/ead_integration/logs.php') . '" class="btn btn-info">📜 Ver Logs de Matrícula</a>';
 echo '<a href="' . new moodle_url('/local/ead_integration/sync_logs.php') . '" class="btn btn-warning">📋 Ver Logs de Sincronização</a>';
+echo '<a href="' . new moodle_url('/local/ead_integration/sincronizar_cursos.php') . '" class="btn btn-warning">📋 Sincronizar cursos</a>';
 echo '<hr><p>Para forçar a execução de tarefas agendadas (como a sincronização de cursos), execute o cron do Moodle via terminal (recomendado) ou navegador:</p>';
 echo '<code>php ' . $CFG->dirroot . '/admin/cli/cron.php</code>';
 echo '</div></div>';

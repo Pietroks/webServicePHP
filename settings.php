@@ -2,11 +2,15 @@
 defined('MOODLE_INTERNAL') || die();
 
 if ($hassiteconfig) {
-    // Página de configurações da API
-    $settings = new admin_settingpage('local_ead_integration_settings', get_string('pluginname', 'local_ead_integration'));
+    // 1. Crie uma nova categoria de administração para o seu plugin.
+    // O primeiro parâmetro 'local_ead_integration' é um nome único para a categoria.
+    // O segundo é o título que aparecerá no menu, pego do seu arquivo de idioma.
+    $ADMIN->add('root', new admin_category('local_ead_integration_category', get_string('pluginname', 'local_ead_integration')));
 
-    // Cabeçalho: Configurações da API
-    $settings->add(new admin_setting_heading('local_ead_integration_api_settings', get_string('api_settings', 'local_ead_integration'), ''));
+    // --- PÁGINA DE CONFIGURAÇÕES DA API ---
+    // Adicione a página de configurações à sua NOVA categoria ('local_ead_integration_category')
+    // O título da página já é definido aqui, então o cabeçalho extra é desnecessário.
+    $settings = new admin_settingpage('local_ead_integration_settings', get_string('api_settings', 'local_ead_integration'));
 
     $settings->add(new admin_setting_configtext(
         'local_ead_integration/baseurl',
@@ -39,28 +43,31 @@ if ($hassiteconfig) {
         'afb94979f63f3038b84344d7ac37febe39748167',
         PARAM_TEXT
     ));
+    
+    // Adiciona a página de configurações à sua categoria
+    $ADMIN->add('local_ead_integration_category', $settings);
 
-    // Adiciona a seção na categoria "localplugins"
-    $ADMIN->add('localplugins', $settings);
-
-    // Agora registre os links de ferramentas diretamente no menu do admin
-    $ADMIN->add('localplugins', new admin_externalpage(
-        'local_ead_integration_enrollpage',
-        get_string('enroll_page_title', 'local_ead_integration'),
-        new moodle_url('/local/ead_integration/enroll.php')
-    ));
-
-    $ADMIN->add('localplugins', new admin_externalpage(
-        'local_ead_integration_syncpage',
-        get_string('sync_courses_page_title', 'local_ead_integration'),
-        new moodle_url('/local/ead_integration/sincronizar_cursos.php')
-    ));
-
-    $ADMIN->add('localplugins', new admin_externalpage(
+    // --- PÁGINAS DE FERRAMENTAS ---
+    // Agora adicione os links das ferramentas à sua NOVA categoria.
+    
+    // Link para o Dashboard (index.php)
+    $ADMIN->add('local_ead_integration_category', new admin_externalpage(
         'local_ead_integration_index',
         get_string('index_page_title', 'local_ead_integration'),
         new moodle_url('/local/ead_integration/index.php')
     ));
 
-}
+    // Link para a página de Matrículas (enroll.php)
+    $ADMIN->add('local_ead_integration_category', new admin_externalpage(
+        'local_ead_integration_enrollpage', 
+        get_string('enroll_page_title', 'local_ead_integration'),
+        new moodle_url('/local/ead_integration/enroll.php')
+    ));
 
+    // Link para a página de Sincronização de Cursos
+    $ADMIN->add('local_ead_integration_category', new admin_externalpage(
+        'local_ead_integration_syncpage',
+        get_string('sync_courses_page_title', 'local_ead_integration'),
+        new moodle_url('/local/ead_integration/sincronizar_cursos.php')
+    ));
+}
