@@ -23,15 +23,15 @@ $PAGE->set_title("Minhas Disciplinas EAD");
 $client = new \local_ead_integration\webservice_client();
 $dataInicio = '01/01/2020';
 $dataFim = '31/12/2025';
-// ALTERADO: Aumentado para 50 itens por página, conforme solicitado.
-$registrosPorPagina = 100;
+$registrosParaApi = 200;      // Pede até 200 vídeos para a API.
+$itensPorPaginaDisplay = 10;  // Mostra 10 vídeos por página na tela.
 
 // Inicia o output do HTML
 echo $OUTPUT->header();
 
-// NOVO: Bloco de estilos para um visual mais moderno
 ?>
 <style>
+    /* SEU CSS PERMANECE O MESMO */
     body {
         background-color: #f8f9fa;
     }
@@ -73,7 +73,7 @@ echo $OUTPUT->header();
     }
     iframe {
         border-radius: 0.5rem;
-        border: 1px solid #dee2e6;
+        border: 1px solid #0d1d2eff;
     }
     .pagination .page-link {
         border-radius: 0.25rem;
@@ -92,7 +92,6 @@ echo $OUTPUT->header();
     }
 </style>
 <?php
-
 // 1. Obter CPF do perfil do usuário
 $cpfFieldId = $DB->get_field('user_info_field', 'id', ['shortname' => 'cpf']);
 if (!$cpfFieldId) {
@@ -166,36 +165,65 @@ if (empty($disciplinas) || !is_array($disciplinas) || !isset($disciplinas[0])) {
                 'nome' => $nomeDisciplina, 'timecreated' => time(), 'timemodified' => time()
             ]);
         }
-
+        
         echo "<div class='card disciplina-card shadow-sm mb-4'>";
         echo "<div class='card-header d-flex align-items-center'><i class='bi bi-book-half me-2'></i><h2 class='h5 mb-0'>{$disciplinaNomeExibicao}</h2></div>";
         echo "<div class='card-body p-0'>";
 
-        // === BLOCO DE AULAS COM PAGINAÇÃO ===
-        $aulasRaw = $client->call('getAulas', [ 'MatriculaID' => $matriculaId, 'DisciplinaID' => $disciplinaId, 'registros_pagina' => $registrosPorPagina, 'pagina' => $pagina_aulas ], true);
+        // 1. Pede um bloco grande de vídeos (até 200) para a API, apenas da primeira página.
+        $cache_videos = cache::make('local_ead_integration', 'videos');
+        $cachekey_videos = 'disciplina_' . $disciplinaId . '_mat_' . $matriculaId;
+        if (!($todosOsVideos = $cache_videos->get($cachekey_videos))) {
+            // Se NÃO achou no cache (CACHE MISS):
 
-        $aulas = [];
-        if (is_array($aulasRaw)) {
-            foreach ($aulasRaw as $aula) {
-                if (is_array($aula) && !empty($aula['Tema']) && !empty($aula['AulaID'])) {
-                    $aulas[] = $aula;
-                }
-            }
-        }
-
-        if (!empty($aulas)) {
-            echo "<div class='p-3'><h5 class='mb-3'><i class='bi bi-camera-reels-fill me-2'></i>Aulas</h5></div><ul class='list-group list-group-flush'>";
-            foreach ($aulas as $aula) {
-                $titulo = htmlspecialchars($aula['Tema']);
-                $aulaId = $aula['AulaID'];
-                $video = $client->call('getVideoAulaPlayer', [ 'MatriculaID' => $matriculaId, 'AulaID' => $aulaId, 'registros_pagina' => 1, 'pagina' => 1 ], true);
-                $urlVideo = '';
-                if (is_array($video) && !empty($video['response']) && is_string($video['response'])) {
-                    $decoded_url = json_decode($video['response']);
-                    if (json_last_error() === JSON_ERROR_NONE && is_string($decoded_url)) {
-                        $urlVideo = $decoded_url;
+            // 1. Busca a lista de até 200 vídeos na API (lento).
+            $aulasRaw = $client->call('getAulas', [ 'MatriculaID' => $matriculaId, 'DisciplinaID' => $disciplinaId, 'registros_pagina' => $registrosParaApi, 'pagina' => 1 ], true);
+            
+            // 2. Limpa os duplicados.
+            $todosOsVideos = [];
+            $idsUnicos = [];
+            if (is_array($aulasRaw)) {
+                foreach ($aulasRaw as $aula) {
+                    if (is_array($aula) && !empty($aula['AulaID']) && !in_array($aula['AulaID'], $idsUnicos)) {
+                        $todosOsVideos[] = $aula;
+                        $idsUnicos[] = $aula['AulaID'];
                     }
                 }
+            }
+
+            foreach ($todosOsVideos as $key => $aula) {
+                    $video = $client->call('getVideoAulaPlayer', [ 'MatriculaID' => $matriculaId, 'AulaID' => $aula['AulaID'], 'registros_pagina' => 1, 'pagina' => 1 ], true);
+                    $urlVideo = '';
+                    if (is_array($video) && !empty($video['response']) && is_string($video['response'])) {
+                        $decoded_url = json_decode($video['response']);
+                        if (json_last_error() === JSON_ERROR_NONE && is_string($decoded_url)) {
+                            $urlVideo = $decoded_url;
+                        }
+                    }
+                    // Adiciona a URL do player diretamente no array do vídeo.
+                    $todosOsVideos[$key]['url_player'] = $urlVideo;
+                }
+
+                // 4. Salva a lista completa (com URLs) no cache por 15 minutos (900 segundos).
+                $cache_videos->set($cachekey_videos, $todosOsVideos, 900);
+            }
+
+        $totalDeVideos = count($todosOsVideos);
+        if ($totalDeVideos > 0) {
+            $totalPaginas = ceil($totalDeVideos / $itensPorPaginaDisplay);
+            if ($pagina_aulas > $totalPaginas) { $pagina_aulas = $totalPaginas; }
+            if ($pagina_aulas < 1) { $pagina_aulas = 1; }
+
+            $offset = ($pagina_aulas - 1) * $itensPorPaginaDisplay;
+            $aulasNestaPagina = array_slice($todosOsVideos, $offset, $itensPorPaginaDisplay);
+
+            echo "<div class='p-3'><h5 class='mb-3'><i class='bi bi-camera-reels-fill me-2'></i>Aulas (Página {$pagina_aulas} de {$totalPaginas})</h5></div><ul class='list-group list-group-flush'>";
+            
+            // Loop de exibição agora é super rápido, pois não faz chamadas à API.
+            foreach ($aulasNestaPagina as $aula) {
+                $titulo = htmlspecialchars($aula['Tema']);
+                $urlVideo = $aula['url_player']; // Pega a URL que já buscamos e guardamos.
+
                 echo "<li class='list-group-item'>";
                 echo "<strong><i class='bi bi-play-btn me-2'></i>{$titulo}</strong>";
                 if (filter_var($urlVideo, FILTER_VALIDATE_URL)) {
@@ -207,74 +235,75 @@ if (empty($disciplinas) || !is_array($disciplinas) || !isset($disciplinas[0])) {
             }
             echo "</ul>";
 
-            echo '<div class="card-footer bg-white py-3">';
-            echo '<nav aria-label="Navegação das Aulas"><ul class="pagination justify-content-center mb-0">';
-            if ($pagina_aulas > 1) {
-                $url_anterior = new moodle_url($base_url, ['page_aulas' => $pagina_aulas - 1, 'page_pdfs' => $pagina_pdfs]);
-                echo '<li class="page-item"><a class="page-link" href="' . $url_anterior . '">&laquo; Anteriores</a></li>';
-            } else {
-                echo '<li class="page-item disabled"><span class="page-link">&laquo; Anteriores</span></li>';
+            // 6. Monta os controles de paginação LOCAL.
+            if ($totalPaginas > 1) {
+                echo '<div class="card-footer bg-white py-3">';
+                echo '<nav aria-label="Navegação das Aulas"><ul class="pagination justify-content-center mb-0">';
+                
+                // Botão Anterior
+                if ($pagina_aulas > 1) {
+                    $url_anterior = new moodle_url($base_url, ['page_aulas' => $pagina_aulas - 1, 'page_pdfs' => $pagina_pdfs]);
+                    echo '<li class="page-item"><a class="page-link" href="' . $url_anterior . '">&laquo;</a></li>';
+                } else {
+                    echo '<li class="page-item disabled"><span class="page-link">&laquo;</span></li>';
+                }
+                
+                // Botões Numéricos
+                for ($i = 1; $i <= $totalPaginas; $i++) {
+                    $activeClass = ($i == $pagina_aulas) ? 'active' : '';
+                    $url_pagina = new moodle_url($base_url, ['page_aulas' => $i, 'page_pdfs' => $pagina_pdfs]);
+                    echo '<li class="page-item ' . $activeClass . '"><a class="page-link" href="' . $url_pagina . '">' . $i . '</a></li>';
+                }
+
+                // Botão Próxima
+                if ($pagina_aulas < $totalPaginas) {
+                    $url_proxima = new moodle_url($base_url, ['page_aulas' => $pagina_aulas + 1, 'page_pdfs' => $pagina_pdfs]);
+                    echo '<li class="page-item"><a class="page-link" href="' . $url_proxima . '">&raquo;</a></li>';
+                } else {
+                    echo '<li class="page-item disabled"><span class="page-link">&raquo;</span></li>';
+                }
+                
+                echo '</ul></nav></div>';
             }
-            if (is_array($aulasRaw) && count($aulasRaw) >= $registrosPorPagina) {
-                $url_proxima = new moodle_url($base_url, ['page_aulas' => $pagina_aulas + 1, 'page_pdfs' => $pagina_pdfs]);
-                echo '<li class="page-item"><a class="page-link" href="' . $url_proxima . '">Próximas &raquo;</a></li>';
-            } else {
-                echo '<li class="page-item disabled"><span class="page-link">Próximas &raquo;</span></li>';
-            }
-            echo '</ul></nav></div>';
 
         } else {
             echo "<div class='p-3'><p class='text-muted'>Nenhuma aula encontrada para esta disciplina.</p></div>";
         }
 
-
         // === BLOCO DE PDFs COM PAGINAÇÃO ===
-        $pdfsRaw = $client->call('getPdfsDisciplina', [ 'MatriculaID' => $matriculaId, 'DisciplinaID' => $disciplinaId, 'registros_pagina' => $registrosPorPagina, 'pagina' => $pagina_pdfs ], true);
-        
-        $pdfs = [];
-        if (is_array($pdfsRaw)) {
-            foreach ($pdfsRaw as $pdf) {
-                if (is_array($pdf) && !empty($pdf['Descricao']) && !empty($pdf['LivroDisciplinaID'])) {
-                    $pdfs[] = $pdf;
-                }
-            }
-        }
-        
-        if (!empty($pdfs)) {
-            echo "<div class='p-3 border-top'><h5 class='mb-3'><i class='bi bi-file-earmark-pdf-fill me-2'></i>Materiais (PDF)</h5></div><ul class='list-group list-group-flush'>";
-            foreach ($pdfs as $pdf) {
-                $livroId = $pdf['LivroDisciplinaID'];
-                $tituloPdf = htmlspecialchars($pdf['Descricao']);
-                $pdfDetalhe = $client->call('getPdf', [ 'MatriculaID' => $matriculaId, 'LivroDisciplinaID' => $livroId ], true);
-                $urlPdf = '';
-                if (is_array($pdfDetalhe) && !empty($pdfDetalhe['response'])) {
-                    $decodedPdf = json_decode($pdfDetalhe['response']);
-                    if (json_last_error() === JSON_ERROR_NONE && is_string($decodedPdf)) {
-                        $urlPdf = $decodedPdf;
+        $cache_pdfs = cache::make('local_ead_integration', 'pdfs');
+        $cachekey_pdfs = 'disciplina_' . $disciplinaId . '_mat_' . $matriculaId;
+        if (!($todosOsPdfs = $cache_pdfs->get($cachekey_pdfs))) {
+            $pdfsRaw = $client->call('getPdfsDisciplina', [ 'MatriculaID' => $matriculaId, 'DisciplinaID' => $disciplinaId, 'registros_pagina' => 100, 'pagina' => 1 ], true);
+            $todosOsPdfs = [];
+            if (is_array($pdfsRaw)) {
+                foreach ($pdfsRaw as $pdf) {
+                    if (is_array($pdf) && !empty($pdf['Descricao']) && !empty($pdf['LivroDisciplinaID'])) {
+                        $pdfDetalhe = $client->call('getPdf', [ 'MatriculaID' => $matriculaId, 'LivroDisciplinaID' => $pdf['LivroDisciplinaID'] ], true);
+                        $urlPdf = '';
+                        if (is_array($pdfDetalhe) && !empty($pdfDetalhe['response'])) {
+                            $decodedPdf = json_decode($pdfDetalhe['response']);
+                            if (json_last_error() === JSON_ERROR_NONE && is_string($decodedPdf)) {
+                                $urlPdf = $decodedPdf;
+                            }
+                        }
+                        $pdf['url_pdf'] = $urlPdf;
+                        $todosOsPdfs[] = $pdf;
                     }
                 }
+            }
+            $cache_pdfs->set($cachekey_pdfs, $todosOsPdfs, 900);
+        }
+        if (!empty($todosOsPdfs)) {
+            echo "<div class='p-3 border-top'><h5 class='mb-3'><i class='bi bi-file-earmark-pdf-fill me-2'></i>Materiais (PDF)</h5></div><ul class='list-group list-group-flush'>";
+            foreach ($todosOsPdfs as $pdf) {
+                $tituloPdf = htmlspecialchars($pdf['Descricao']);
+                $urlPdf = $pdf['url_pdf'];
                 if (filter_var($urlPdf, FILTER_VALIDATE_URL)) {
                     echo "<li class='list-group-item'><a href='" . htmlspecialchars($urlPdf) . "' target='_blank' class='text-decoration-none'><i class='bi bi-box-arrow-up-right me-2'></i>{$tituloPdf}</a></li>";
                 }
             }
             echo "</ul>";
-
-            echo '<div class="card-footer bg-white py-3 border-top-0">';
-            echo '<nav aria-label="Navegação dos PDFs"><ul class="pagination justify-content-center mb-0">';
-            if ($pagina_pdfs > 1) {
-                $url_anterior = new moodle_url($base_url, ['page_aulas' => $pagina_aulas, 'page_pdfs' => $pagina_pdfs - 1]);
-                echo '<li class="page-item"><a class="page-link" href="' . $url_anterior . '">&laquo; Anteriores</a></li>';
-            } else {
-                echo '<li class="page-item disabled"><span class="page-link">&laquo; Anteriores</span></li>';
-            }
-            if (is_array($pdfsRaw) && count($pdfsRaw) >= $registrosPorPagina) {
-                $url_proxima = new moodle_url($base_url, ['page_aulas' => $pagina_aulas, 'page_pdfs' => $pagina_pdfs + 1]);
-                echo '<li class="page-item"><a class="page-link" href="' . $url_proxima . '">Próximos &raquo;</a></li>';
-            } else {
-                echo '<li class="page-item disabled"><span class="page-link">Próximos &raquo;</span></li>';
-            }
-            echo '</ul></nav></div>';
-
         } else {
              echo "<div class='p-3 border-top'><p class='text-muted'>Nenhum material PDF encontrado para esta disciplina.</p></div>";
         }
