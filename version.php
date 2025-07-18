@@ -2,7 +2,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_ead_integration';
-$plugin->version = 20240708088; // AAAAMMDDXX (Ano, Mês, Dia, Versão)
+$plugin->version = 20240708093; // AAAAMMDDXX (Ano, Mês, Dia, Versão)
 $plugin->requires = 2022112800; // Versão do Moodle 4.1
 $plugin->maturity = MATURITY_ALPHA;
 $plugin->release = '0.7';

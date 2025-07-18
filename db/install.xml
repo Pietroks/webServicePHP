@@ -41,9 +41,10 @@
     </TABLE>
 
     <!-- Disciplinas -->
-    <TABLE NAME="eadintegration_disciplinas" COMMENT="Disciplinas vinculadas a uma grade IESDE">
+    <TABLE NAME="eadintegration_disciplinas" COMMENT="Disciplinas vinculadas a uma grade IESDE e mapeadas para um curso Moodle">
       <FIELDS>
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="moodle_courseid" TYPE="int" LENGTH="10" NOTNULL="true" COMMENT="ID do curso no Moodle"/>
         <FIELD NAME="gradeid" TYPE="int" LENGTH="10" NOTNULL="true"/>
         <FIELD NAME="disciplinaid" TYPE="int" LENGTH="10" NOTNULL="true"/>
         <FIELD NAME="nome" TYPE="text" NOTNULL="true"/>
@@ -52,7 +53,21 @@
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
-        <KEY NAME="unique_disciplina" TYPE="unique" FIELDS="gradeid, disciplinaid"/>
+        <KEY NAME="unique_disciplina_curso" TYPE="unique" FIELDS="moodle_courseid, disciplinaid"/>
+      </KEYS>
+    </TABLE>
+
+    <TABLE NAME="eadintegration_aulas" COMMENT="Mapeia Aulas da API para módulos (URL/Página) do Moodle">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="moodle_courseid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="api_aulaid" TYPE="int" LENGTH="10" NOTNULL="true"/>
+        <FIELD NAME="moodle_cmid" TYPE="int" LENGTH="10" NOTNULL="true" COMMENT="ID do Course Module"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="unique_aula" TYPE="unique" FIELDS="moodle_courseid, api_aulaid"/>
       </KEYS>
     </TABLE>
 

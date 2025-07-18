@@ -46,6 +46,86 @@ function register_log($user_id, $course_id, $action, $status, $message, $respons
     $DB->insert_record('eadintegration_logs', $log);
 }
 
+
+/**
+ * Cria a atividade de URL para acessar o conteúdo EAD se ela ainda não existir no curso.
+ * @param stdClass $course O objeto do curso do Moodle.
+ * @return void
+ */
+function create_ead_activity_if_not_exists($course) {
+    global $DB, $CFG;
+
+    require_once($CFG->dirroot . '/mod/url/locallib.php');
+
+    // Nome da atividade que vamos procurar ou criar.
+    $activity_name = 'Acessar Conteúdo IESD';
+    $activity_filename = 'sincronizar_conteudo.php'; // Nome do seu script de visualização
+
+    // Verifica se já existe uma atividade de URL com um link para o nosso script.
+    $sql = "SELECT 1
+              FROM {url} u
+              JOIN {course_modules} cm ON u.id = cm.instance
+              JOIN {modules} m ON cm.module = m.id
+             WHERE m.name = 'url'
+               AND cm.course = :courseid
+               AND u.name = :activityname
+               AND u.externalurl LIKE :fileurl";
+
+    $params = [
+        'courseid' => $course->id,
+        'activityname' => $activity_name,
+        'fileurl' => '%' . $activity_filename . '%'
+    ];
+
+    if ($DB->record_exists_sql($sql, $params)) {
+        // Se já existe, não faz nada.
+        return;
+    }
+
+    // Se não existe, vamos criar!
+    // Inclui a biblioteca para adicionar/atualizar módulos de curso.
+    require_once($CFG->dirroot . '/course/lib.php');
+
+    require_once($CFG->dirroot . '/course/modlib.php');
+
+
+    // Monta a URL externa completa.
+    $external_url = (new moodle_url('/local/ead_integration/' . $activity_filename, ['id' => $course->id]))->out(false);
+
+    $moduleid = $DB->get_field('modules', 'id', ['name' => 'url'], MUST_EXIST);
+
+    // Cria o objeto de dados para o recurso URL.
+    $url_instance = new stdClass();
+    $url_instance->course        = $course->id;
+    $url_instance->name          = $activity_name;
+    $url_instance->intro         = 'Clique neste link para acessar as videoaulas e materiais de apoio do seu curso.';
+    $url_instance->introformat   = FORMAT_HTML;
+    $url_instance->externalurl   = $external_url;
+    $url_instance->display       = 0; // automático
+    $url_instance->visible       = 1;
+    $url_instance->visibleoncoursepage = 1;
+    $url_instance->groupmode     = 0;
+    $url_instance->groupingid    = 0;
+    $url_instance->showdescription = 0;
+    $url_instance->completion    = 0;
+    $url_instance->modulename    = 'url';
+    $url_instance->module        = $moduleid;
+    $url_instance->section       = 0; // coloca na primeira seção
+    $url_instance->timemodified  = time();
+    $url_instance->add           = 'url'; // necessário para `add_moduleinfo`
+
+
+
+    // Adiciona a instância do módulo ao curso.
+    $moduleinfo = add_moduleinfo($url_instance, $course); 
+
+    if ($moduleinfo) {
+        print_message_box('✅ Atividade "Acessar Conteúdo EAD" criada automaticamente no curso.', 'success');
+    } else {
+        print_message_box('⚠️ Não foi possível criar a atividade "Acessar Conteúdo EAD".', 'warning');
+    }
+}
+
 // PROCESSAMENTO
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
     if ($action === 'revert') {
@@ -96,6 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
         if (empty($moodle_userids)) {
             print_message_box('❌ Nenhum aluno foi selecionado.', 'error');
         } else {
+            $activity_checked = false; 
             foreach ($moodle_userids as $moodle_userid) {
                 $user = $DB->get_record('user', ['id' => $moodle_userid]);
                 echo '<hr><h4>Processando: ' . fullname($user) . '</h4>';
@@ -129,6 +210,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
                 register_log($user->id, $course->id, 'enroll', $is_success ? 'success' : 'error', json_encode($resultado), json_encode($resultado));
 
                 if ($is_success) {
+                    if (!$activity_checked) {
+                        create_ead_activity_if_not_exists($course);
+                        $activity_checked = true; // Só cria uma vez por matrícula
+                    } 
                     $new_enrollment = new stdClass();
                     $new_enrollment->moodle_userid = $user->id;
                     $new_enrollment->moodle_courseid = $course->id;
